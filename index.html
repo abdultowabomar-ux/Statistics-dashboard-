@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة إحصائيات | Omar Abdel Tawab Saleh</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { 
+            font-family: 'Tajawal', sans-serif; 
+            background-color: #f3f4f6; 
+            color: #1f2937; 
+            overflow-x: hidden; 
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        /* أنماط الوضع الليلي */
+        body.dark-mode {
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        .white-card { 
+            background: #ffffff; 
+            border-radius: 24px; 
+            position: relative; 
+            overflow: hidden; 
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .dark-mode .white-card {
+            background: #1e293b;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .white-card:hover { transform: translateY(-5px); }
+
+        .color-bar {
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, transparent, #3b82f6, #facc15, #ef4444, transparent);
+            animation: flow 3s infinite linear;
+        }
+
+        @keyframes flow {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        canvas { max-width: 100% !important; }
+
+        .dark-mode .text-gray-800, .dark-mode .text-gray-700 { color: #f1f5f9 !important; }
+        .dark-mode .text-gray-500, .dark-mode .text-gray-400 { color: #94a3b8 !important; }
+        .dark-mode .bg-gray-100, .dark-mode .bg-gray-50 { background-color: #334155 !important; }
+        .dark-mode .border-b { border-color: #334155 !important; }
+        .dark-mode tr:hover { background-color: #334155 !important; }
+        
+        /* زر تبديل الوضع */
+        .theme-toggle {
+            position: fixed;
+            top: 15px;
+            right: 20px;
+            z-index: 1000;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function Dashboard() {
+            const [data, setData] = useState([]);
+            const [stats, setStats] = useState({ total: 0, countries: 0 });
+            const [isDark, setIsDark] = useState(false); // حالة الوضع الليلي
+            const charts = useRef({});
+
+            const firebaseConfig = {
+                apiKey: "AIzaSyCaFZNgxoXnjuh-0zlQ8lp8pVp2YUMmsp4",
+                databaseURL: "https://thesalafikiller-default-rtdb.firebaseio.com/",
+                projectId: "thesalafikiller"
+            };
+
+            useEffect(() => {
+                if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                const db = firebase.database();
+                db.ref('users_log').on('value', (snapshot) => {
+                    const val = snapshot.val();
+                    if (val) {
+                        const formatted = Object.values(val).reverse();
+                        setData(formatted);
+                        setStats({ total: formatted.length, countries: [...new Set(formatted.map(i => i.country))].length });
+                        initCharts(formatted, isDark);
+                    }
+                });
+            }, [isDark]); // إعادة رسم المخططات عند تغيير الوضع
+
+            // مراقبة تغيير الوضع الليلي وتطبيقه على الجسم
+            useEffect(() => {
+                if (isDark) {
+                    document.body.classList.add('dark-mode');
+                } else {
+                    document.body.classList.remove('dark-mode');
+                }
+            }, [isDark]);
+
+            const initCharts = (items, dark) => {
+                const textColor = dark ? '#f1f5f9' : '#1f2937';
+                const gridColor = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)';
+
+                // الرسم البياني الإحداثي (X-Y)
+                const ctxLine = document.getElementById('lineChart').getContext('2d');
+                if (charts.current.line) charts.current.line.destroy();
+                charts.current.line = new Chart(ctxLine, {
+                    type: 'line',
+                    data: {
+                        labels: items.slice(0,10).map(i => i.time.split(',')[1]).reverse(),
+                        datasets: [{
+                            label: 'نشاط الدخول',
+                            data: items.slice(0,10).map((_, idx) => idx + 1),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: { grid: { color: gridColor }, ticks: { color: textColor } },
+                            x: { grid: { color: gridColor }, ticks: { color: textColor } }
+                        },
+                        plugins: { legend: { labels: { color: textColor } } }
+                    }
+                });
+
+                // الرسم الدائري
+                const ctxPie = document.getElementById('pieChart').getContext('2d');
+                const countryCounts = {};
+                items.forEach(i => countryCounts[i.country] = (countryCounts[i.country] || 0) + 1);
+                if (charts.current.pie) charts.current.pie.destroy();
+                charts.current.pie = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(countryCounts),
+                        datasets: [{
+                            data: Object.values(countryCounts),
+                            backgroundColor: ['#3b82f6', '#facc15', '#ef4444', '#10b981'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        plugins: { legend: { labels: { color: textColor } } }
+                    }
+                });
+            };
+
+            return (
+                <div className="container mx-auto p-6 md:p-12">
+                    {/* زر تبديل الوضع الليلي */}
+                    <button 
+                        onClick={() => setIsDark(!isDark)}
+                        className={`theme-toggle ${isDark ? 'bg-yellow-400' : 'bg-gray-800 text-white'}`}
+                    >
+                        {isDark ? '☀️' : '🌙'}
+                    </button>
+
+                    {/* هيدر الصفحة */}
+                    <header className="text-center mb-16">
+                        <h1 className="text-4xl md:text-6xl font-black mb-4">
+                            لوحة إحصائيات <br/> 
+                            <span className="text-blue-600">Omar Abdel Tawab Saleh</span>
+                        </h1>
+                        <div className="w-24 h-2 bg-blue-600 mx-auto rounded-full"></div>
+                    </header>
+
+                    {/* التوزيع الجغرافي */}
+                    <div className="white-card p-8 mb-12 max-w-2xl mx-auto text-center">
+                        <div className="color-bar"></div>
+                        <h3 className="text-xl font-bold mb-6 text-gray-700">🌍 التوزيع الجغرافي للمستخدمين</h3>
+                        <div className="max-w-[300px] mx-auto">
+                            <canvas id="pieChart"></canvas>
+                        </div>
+                    </div>
+
+                    {/* البطاقات الإحصائية */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+                        <StatBox icon="👥" title="إجمالي الزوار" value={stats.total} color="bg-blue-600" isDark={isDark} />
+                        <StatBox icon="🌍" title="الدول النشطة" value={stats.countries} color="bg-yellow-500" isDark={isDark} />
+                        <StatBox icon="📈" title="معدل النمو" value="+100%" color="bg-green-500" isDark={isDark} />
+                    </div>
+
+                    {/* مخطط الإحداثيات */}
+                    <div className="white-card p-8 mb-12">
+                        <div className="color-bar"></div>
+                        <h3 className="text-xl font-bold mb-6 text-gray-700">📊 مخطط الإحداثيات (الزمن/النشاط)</h3>
+                        <canvas id="lineChart"></canvas>
+                    </div>
+
+                    {/* جدول البيانات */}
+                    <div className="white-card shadow-xl overflow-hidden">
+                        <div className="color-bar"></div>
+                        <div className="p-8 bg-gray-50 border-b">
+                            <h3 className="text-xl font-bold text-gray-700">📋 السجل التفصيلي للمستخدمين</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-right">
+                                <thead className="bg-gray-100 text-gray-600">
+                                    <tr>
+                                        <th className="p-5">الدولة</th>
+                                        <th className="p-5">العنوان IP</th>
+                                        <th className="p-5">الجهاز</th>
+                                        <th className="p-5">البطارية</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.map((user, idx) => (
+                                        <tr key={idx} className="border-b hover:bg-blue-50 transition-colors">
+                                            <td className="p-5 font-bold">{user.country}</td>
+                                            <td className="p-5 font-mono text-blue-600 text-sm">{user.ip}</td>
+                                            <td className="p-5 text-sm">{user.device}</td>
+                                            <td className="p-5">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-xs">{user.battery}</span>
+                                                    <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-blue-500" style={{width: user.battery}}></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <footer className="mt-12 text-center text-gray-400 font-bold">
+                        OMAR ABDEL TAWAB SALEH &copy; 2026
+                    </footer>
+                </div>
+            );
+        }
+
+        function StatBox({ icon, title, value, color, isDark }) {
+            return (
+                <div className="white-card p-10 flex flex-col items-center justify-center text-center">
+                    <div className="color-bar"></div>
+                    <div className={`text-5xl mb-4 p-4 rounded-full ${isDark ? 'bg-slate-700' : 'bg-gray-50'} shadow-inner`}>{icon}</div>
+                    <div className="text-gray-500 font-bold text-sm uppercase mb-2">{title}</div>
+                    <div className="text-5xl font-black tracking-tighter">{value}</div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
+
