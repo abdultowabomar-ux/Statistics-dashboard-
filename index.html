@@ -199,6 +199,48 @@
                         <StatBox icon="🌍" title="الدول النشطة" value={stats.countries} color="bg-yellow-500" isDark={isDark} />
                         <StatBox icon="📈" title="معدل النمو" value="+100%" color="bg-green-500" isDark={isDark} />
                     </div>
+                    {/* قسم إرسال التحديثات العامة */}
+<div className="white-card p-8 mb-12 border-2 border-blue-500/20">
+    <div className="color-bar"></div>
+    <h3 className="text-xl font-bold mb-4 text-gray-700 flex items-center gap-2">
+      🥰   إرسال تحديث عام للمستخدمين
+    </h3>
+    <div className="flex flex-col md:flex-row gap-4">
+        <input 
+            id="broadcastInput"
+            type="text" 
+            placeholder="اكتب الرسالة أو الرابط هنا..."
+            className={`flex-1 p-4 rounded-xl border-2 outline-none transition-all ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
+        />
+        <button 
+            onClick={function() {
+                const msg = document.getElementById('broadcastInput').value;
+                if (!msg) return alert("يرجى كتابة نص الرسالة!");
+                
+                const db = firebase.database();
+                db.ref('broadcast').set({
+                    message: msg,
+                    timestamp: Date.now(),
+                    active: true
+                }, function(error) {
+                    if (error) {
+                        alert("فشل في الإرسال: " + error.message);
+                    } else {
+                        alert("✅ تم إرسال التحديث بنجاح!");
+                        document.getElementById('broadcastInput').value = "";
+                    }
+                });
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl transition-transform active:scale-95 shadow-lg"
+        >
+            إرسال الآن
+        </button>
+    </div>
+    <p className="mt-3 text-xs text-gray-400 font-bold">
+        * سيتم تحديث العقدة 'broadcast' في قاعدة البيانات فور الضغط على الزر.
+    </p>
+</div>
+
 
                     {/* دمج قسم الشات هنا */}
                     <h2 className="text-2xl font-black mb-6 flex items-center gap-2">
@@ -255,119 +297,130 @@
             );
         }
 
-        function ChatSection({ isDark, db }) {
-            const [messages, setMessages] = useState([]);
-            const [chatMode, setChatMode] = useState('public');
-            const [activeUser, setActiveUser] = useState(null);
-            const [privateUsers, setPrivateUsers] = useState([]);
-            const [inputText, setInputText] = useState('');
-            const scrollRef = useRef();
+      function ChatSection({ isDark, db }) {
+    const [publicMessages, setPublicMessages] = useState([]);
+    const [privateMessages, setPrivateMessages] = useState([]);
+    const [activeUser, setActiveUser] = useState(null);
+    const [privateUsers, setPrivateUsers] = useState([]);
+    const [publicInput, setPublicInput] = useState('');
+    const [privateInput, setPrivateInput] = useState('');
+    const scrollPublic = useRef();
+    const scrollPrivate = useRef();
 
-            useEffect(() => {
-                const usersRef = db.ref('private_chats');
-                usersRef.on('value', (snapshot) => {
-                    if (snapshot.val()) {
-                        setPrivateUsers(Object.keys(snapshot.val()));
-                    }
-                });
-            }, []);
+    // جلب قائمة المستخدمين للشات الخاص
+    useEffect(() => {
+        db.ref('private_chats').on('value', (snapshot) => {
+            if (snapshot.val()) setPrivateUsers(Object.keys(snapshot.val()));
+        });
+    }, []);
 
-            useEffect(() => {
-                let chatPath = chatMode === 'public' ? 'public_chat' : `private_chats/${activeUser}`;
-                if (chatMode === 'private' && !activeUser) return;
+    // جلب رسائل الشات العام
+    useEffect(() => {
+        const pubRef = db.ref('public_chat').limitToLast(50);
+        pubRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            setPublicMessages(data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : []);
+            setTimeout(() => scrollPublic.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        });
+        return () => pubRef.off();
+    }, []);
 
-                const msgRef = db.ref(chatPath).limitToLast(50);
-                msgRef.on('value', (snapshot) => {
-                    const data = snapshot.val();
-                    const msgList = data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : [];
-                    setMessages(msgList);
-                    setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-                });
+    // جلب رسائل الشات الخاص عند اختيار مستخدم
+    useEffect(() => {
+        if (!activeUser) return;
+        const privRef = db.ref(`private_chats/${activeUser}`).limitToLast(50);
+        privRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            setPrivateMessages(data ? Object.entries(data).map(([id, val]) => ({ id, ...val })) : []);
+            setTimeout(() => scrollPrivate.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        });
+        return () => privRef.off();
+    }, [activeUser]);
 
-                return () => msgRef.off();
-            }, [chatMode, activeUser]);
+    const sendMsg = (path, text, setter) => {
+        if (!text.trim()) return;
+        db.ref(path).push({
+            sender: 'ADMIN',
+            text: text,
+            timestamp: Date.now(),
+            isAdmin: true
+        });
+        setter('');
+    };
 
-            const sendMessage = (e) => {
-                e.preventDefault();
-                if (!inputText.trim()) return;
-                if (chatMode === 'private' && !activeUser) return;
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+            {/* بطاقة الشات العام */}
+            <div className="white-card flex flex-col h-[500px] shadow-xl">
+                <div className="color-bar"></div>
+                <div className="p-4 border-b font-black flex justify-between items-center bg-blue-50 dark:bg-slate-800">
+                    <span>🌍 الشات العام المفتوح</span>
+                    <span className="bg-green-500 text-[10px] text-white px-2 py-1 rounded animate-pulse">LIVE</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {publicMessages.map(msg => (
+                        <MessageBubble key={msg.id} msg={msg} isDark={isDark} />
+                    ))}
+                    <div ref={scrollPublic}></div>
+                </div>
+                <form onSubmit={(e) => { e.preventDefault(); sendMsg('public_chat', publicInput, setPublicInput); }} className="p-3 border-t flex gap-2">
+                    <input value={publicInput} onChange={e => setPublicInput(e.target.value)} placeholder="رد عام..." className="flex-1 p-2 rounded-lg border dark:bg-slate-800 dark:border-slate-700 text-sm" />
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">إرسال</button>
+                </form>
+            </div>
 
-                const chatPath = chatMode === 'public' ? 'public_chat' : `private_chats/${activeUser}`;
-                db.ref(chatPath).push({
-                    sender: 'ADMIN',
-                    text: inputText,
-                    timestamp: Date.now(),
-                    isAdmin: true
-                });
-                setInputText('');
-            };
-
-            return (
-                <div className="white-card grid grid-cols-1 md:grid-cols-4 h-[600px] overflow-hidden shadow-2xl">
-                    <div className="color-bar"></div>
-                    <div className={`col-span-1 border-l ${isDark ? 'border-slate-700 bg-slate-800' : 'bg-gray-50'}`}>
-                        <div className="p-4 font-black border-b flex justify-between items-center">
-                            <span>المحادثات</span>
-                            <span className="bg-blue-600 text-[10px] text-white px-2 py-1 rounded">LIVE</span>
-                        </div>
-                        <div className="overflow-y-auto h-full pb-20">
+            {/* بطاقة الشات الخاص المتطورة */}
+            <div className="white-card flex flex-col h-[500px] shadow-xl">
+                <div className="color-bar" style={{ background: 'linear-gradient(90deg, #facc15, #ef4444)' }}></div>
+                <div className="grid grid-cols-3 h-full">
+                    {/* قائمة المستخدمين الجانبية */}
+                    <div className={`col-span-1 border-l overflow-y-auto ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-gray-50'}`}>
+                        <div className="p-3 text-xs font-bold text-gray-400 border-b">الرسائل الخاصة</div>
+                        {privateUsers.map(user => (
                             <button 
-                                onClick={() => {setChatMode('public'); setActiveUser(null);}}
-                                className={`w-full p-4 text-right hover:bg-blue-100 transition ${chatMode === 'public' ? 'bg-blue-600 text-white' : ''}`}
+                                key={user} 
+                                onClick={() => setActiveUser(user)}
+                                className={`w-full p-3 text-right text-xs truncate border-b transition ${activeUser === user ? 'bg-yellow-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-slate-700'}`}
                             >
-                                🌍 الشات العام
+                                👤 {user.substring(0, 10)}...
                             </button>
-                            <div className="p-2 text-xs font-bold text-gray-400 uppercase">المحادثات الخاصة</div>
-                            {privateUsers.map(user => (
-                                <button 
-                                    key={user}
-                                    onClick={() => { setChatMode('private'); setActiveUser(user); }}
-                                    className={`w-full p-4 text-right text-sm truncate hover:bg-blue-50 transition ${activeUser === user && chatMode === 'private' ? 'bg-blue-600 text-white' : ''}`}
-                                >
-                                    👤 {user.substring(0, 15)}...
-                                </button>
-                            ))}
-                        </div>
+                        ))}
                     </div>
-
-                    <div className="col-span-3 flex flex-col bg-opacity-30">
-                        <div className="p-4 border-b font-bold flex items-center gap-2">
-                            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                            {chatMode === 'public' ? 'الشات العام المفتوح' : `محادثة خاصة مع: ${activeUser}`}
+                    {/* منطقة المحادثة الخاصة */}
+                    <div className="col-span-2 flex flex-col">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {activeUser ? privateMessages.map(msg => (
+                                <MessageBubble key={msg.id} msg={msg} isDark={isDark} />
+                            )) : <div className="text-center text-gray-400 mt-20 text-sm">اختر مستخدماً للبدء</div>}
+                            <div ref={scrollPrivate}></div>
                         </div>
-
-                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                            {messages.map((msg) => (
-                                <div key={msg.id} className={`flex ${msg.isAdmin ? 'justify-start' : 'justify-end'}`}>
-                                    <div className={`max-w-[80%] p-3 rounded-2xl shadow-sm ${
-                                        msg.isAdmin 
-                                        ? 'bg-blue-600 text-white rounded-tr-none' 
-                                        : (isDark ? 'bg-slate-700 text-white rounded-tl-none' : 'bg-gray-200 text-gray-800 rounded-tl-none')
-                                    }`}>
-                                        <div className="text-[10px] opacity-70 mb-1">{msg.isAdmin ? 'أنت (المطور)' : 'مستخدم'}</div>
-                                        <div className="text-sm font-medium">{msg.text}</div>
-                                    </div>
-                                </div>
-                            ))}
-                            <div ref={scrollRef}></div>
-                        </div>
-
-                        <form onSubmit={sendMessage} className="p-4 bg-gray-50 border-t flex gap-2 dark:bg-slate-900">
-                            <input 
-                                type="text" 
-                                value={inputText}
-                                onChange={(e) => setInputText(e.target.value)}
-                                placeholder="اكتب ردك هنا..."
-                                className="flex-1 p-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-700"
-                            />
-                            <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition">
-                                إرسال
-                            </button>
-                        </form>
+                        {activeUser && (
+                            <form onSubmit={(e) => { e.preventDefault(); sendMsg(`private_chats/${activeUser}`, privateInput, setPrivateInput); }} className="p-3 border-t flex gap-2">
+                                <input value={privateInput} onChange={e => setPrivateInput(e.target.value)} placeholder="رد خاص..." className="flex-1 p-2 rounded-lg border dark:bg-slate-800 dark:border-slate-700 text-sm" />
+                                <button className="bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm">إرسال</button>
+                            </form>
+                        )}
                     </div>
                 </div>
-            );
-        }
+            </div>
+        </div>
+    );
+}
+
+// مكون فرعي لفقاعة الرسالة لتقليل تكرار الكود
+function MessageBubble({ msg, isDark }) {
+    return (
+        <div className={`flex ${msg.isAdmin ? 'justify-start' : 'justify-end'}`}>
+            <div className={`max-w-[85%] p-2 px-3 rounded-xl text-sm ${
+                msg.isAdmin ? 'bg-blue-600 text-white rounded-tl-none' : (isDark ? 'bg-slate-700 text-white' : 'bg-gray-200 text-gray-800')
+            }`}>
+                <div className="text-[9px] opacity-70">{msg.isAdmin ? 'أنت' : 'مستخدم'}</div>
+                {msg.text}
+            </div>
+        </div>
+    );
+}
+
 
         function StatBox({ icon, title, value, color, isDark }) {
             return (
